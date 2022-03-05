@@ -10,11 +10,23 @@
 
 #pragma once
 
+#include <future>
 #include <map>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../submodules/mdns/mdns.h"
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <iphlpapi.h>
+#define sleep(x) Sleep(x * 1000)
+#else
+#include <netdb.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#endif
 
 namespace ZeroconfSearcher
 {
@@ -28,13 +40,25 @@ public:
         std::string host;
         std::string ip;
         int port;
+        std::map<std::string, std::string> txtRecords;
+    };
+
+    class ZeroconfSearcherListener
+    {
+    public:
+        //virtual void handleServiceUpdated() = 0;
+        //virtual void handleServiceAdded() = 0;
+        virtual void handleServicesChanged() = 0;
     };
 
 public:
-	ZeroconfSearcher(std::string name, std::string serviceName, unsigned short announcementPort = 0);
+	ZeroconfSearcher(std::string name, std::string serviceName);
 	~ZeroconfSearcher();
 
-    static int recvCallback(int /*sock*/, const struct sockaddr* from, size_t addrlen, mdns_entry_type_t entry,
+    void AddListener(ZeroconfSearcherListener* listener);
+    void RemoveListener(ZeroconfSearcherListener* listener);
+
+    static int RecvCallback(int /*sock*/, const struct sockaddr* from, size_t addrlen, mdns_entry_type_t entry,
             uint16_t /*query_id*/, uint16_t rtype, uint16_t /*rclass*/, uint32_t /*ttl*/, const void* data,
             size_t size, size_t name_offset, size_t /*name_length*/, size_t record_offset,
         size_t record_length, void* /*user_data*/)
@@ -118,20 +142,24 @@ public:
         return ret;
     };
 
-	bool search();
-    std::string getIPForHostAndPort(std::string host, int port);
+    std::string GetIPForHostAndPort(std::string host, int port);
 
-	ServiceInfo * GetService(std::string& name, std::string& host, int port);
-	void AddService(std::string& name, std::string& host, std::string& ip, int port);
-	void RemoveService(ServiceInfo * service);
-	void UpdateService(ServiceInfo * service, std::string& host, std::string& ip, int port);
+	ServiceInfo * GetService(const std::string& name, const std::string& host, int port);
+	void AddService(const std::string& name, const std::string& host, const std::string& ip, int port, const std::map<std::string, std::string>& txtRecords);
+	void RemoveService(std::unique_ptr<ServiceInfo>& service);
+	void UpdateService(std::unique_ptr<ServiceInfo>& service, const std::string& ip, const std::map<std::string, std::string>& txtRecords);
 
-    const std::string&                  GetName();
-    const std::string&                  GetServiceName();
-    const std::vector<ServiceInfo*>&    GetServices();
-    int                                 GetSocketIdx();
+    const std::string&                                  GetName();
+    const std::string&                                  GetServiceName();
+    const std::vector<std::unique_ptr<ServiceInfo>>&    GetServices();
+    int                                                 GetSocketIdx();
+
+    bool Search();
+    void BroadcastChanges();
 
 private:
+    static void run(std::future<void> future, ZeroconfSearcher* searcherInstance);
+
     static std::string                          s_mdnsEntry;
     static std::string                          s_mdnsEntryPTR;
     static std::string                          s_mdnsEntrySRVName;
@@ -144,10 +172,15 @@ private:
     static std::string                          s_mdnsEntryAAAAService;
     static std::map<std::string, std::string>   s_mdnsEntryTXT;
 
-    std::string                 m_name;
-    std::string                 m_serviceName;
-    std::vector<ServiceInfo*>   m_services;
-    int                         m_socketIdx;
+    std::string                                 m_name;
+    std::string                                 m_serviceName;
+    std::vector<std::unique_ptr<ServiceInfo>>   m_services;
+    int                                         m_socketIdx;
+
+    std::promise<void>              m_threadExitSignal;
+    std::unique_ptr<std::thread>    m_searcherThread;
+
+    std::vector<ZeroconfSearcherListener*> m_listeners;
 };
 
 };

@@ -12,15 +12,15 @@
 
 #include "MainComponent.h"
 
-namespace AppBasicsDemo
+namespace ZeroconfSearcherDemo
 {
 
 //==============================================================================
-class AppBasicsDemoApplication  : public JUCEApplication
+class ZeroconfSearcherDemoApplication  : public JUCEApplication
 {
 public:
     //==============================================================================
-    AppBasicsDemoApplication() {}
+    ZeroconfSearcherDemoApplication() {}
 
     const String getApplicationName() override       { return ProjectInfo::projectName; }
     const String getApplicationVersion() override    { return ProjectInfo::versionString; }
@@ -68,8 +68,6 @@ public:
                                                                           .findColour (ResizableWindow::backgroundColourId),
                                                     DocumentWindow::allButtons)
         {
-            m_customLookAndFeel = std::unique_ptr<LookAndFeel>(new JUCEAppBasics::CustomLookAndFeel);
-            Desktop::getInstance().setDefaultLookAndFeel(m_customLookAndFeel.get());
 
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
@@ -113,4 +111,4 @@ private:
 
 //==============================================================================
 // This macro generates the main() routine that launches the app.
-START_JUCE_APPLICATION (AppBasicsDemo::AppBasicsDemoApplication)
+START_JUCE_APPLICATION (ZeroconfSearcherDemo::ZeroconfSearcherDemoApplication)

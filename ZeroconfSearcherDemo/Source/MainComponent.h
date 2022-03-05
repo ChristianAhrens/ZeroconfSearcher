@@ -12,59 +12,62 @@
 
 #include <JuceHeader.h>
 
-#include "DemoOverlayComponent.h"
-#include "AppConfig.h"
+#include "../../Source/ZeroconfSearcher.h"
 
-#include "../../Source/ColourAndSizePickerComponent.h"
-#include "../../Source/MidiLearnerComponent.h"
-#include "../../Source/ZeroconfDiscoverComponent.h"
 
-#include "../../Source/CustomLookAndFeel.h"
-#include "../../Source/SplitButtonComponent.h"
-
-namespace AppBasicsDemo
+namespace ZeroconfSearcherDemo
 {
-
-//==============================================================================
-class DemoHeaderFooterComponent : public Component
-{
-public:
-    //==============================================================================
-    DemoHeaderFooterComponent() {};
-    ~DemoHeaderFooterComponent() {};
-
-    //==============================================================================
-    void paint(Graphics &g)
-    {
-        g.fillAll(getLookAndFeel().findColour(ResizableWindow::backgroundColourId).darker());
-    };
-    void resized() {};
-};
-
-//==============================================================================
-class DemoBodyComponent : public Component
-{
-public:
-    //==============================================================================
-    DemoBodyComponent() {};
-    ~DemoBodyComponent() {};
-
-    //==============================================================================
-    void paint(Graphics& g)
-    {
-        g.fillAll(getLookAndFeel().findColour(ResizableWindow::backgroundColourId));
-    };
-    void resized() {};
-};
 
 //==============================================================================
 /*
     This component lives inside our window, and this is where you should put all
     your controls and content.
 */
-class MainComponent   : public Component, 
-                        public JUCEAppBasics::OverlayToggleComponentBase::OverlayParent
+class MainComponent   : public Component, public ZeroconfSearcher::ZeroconfSearcher::ZeroconfSearcherListener, public MessageListener
 {
+public:
+    class ParentTreeViewItem : public TreeViewItem
+    {
+    public:
+        bool mightContainSubItems() override
+        {
+            return true;
+        }
+
+        void paintItem(Graphics& g, int width, int height) override
+        {
+            auto area = juce::Rectangle<int>(0, 0, width, height);
+            g.drawText(name, area.reduced(2), juce::Justification::left);
+        }
+
+        String name;
+    };
+    class ChildTreeViewItem : public TreeViewItem
+    {
+    public:
+        bool mightContainSubItems() override
+        {
+            return false;
+        }
+
+        void paintItem(Graphics& g, int width, int height) override
+        {
+            auto area = juce::Rectangle<int>(0, 0, width, height);
+            auto nameArea = area.removeFromLeft(50);
+            auto valueArea = area;
+            g.drawText(name, nameArea.reduced(2), juce::Justification::left);
+            g.drawText(value, valueArea.reduced(2), juce::Justification::left);
+        }
+
+        String name;
+        String value;
+    };
+    class ServicesUpdatedMessage : public Message
+    {
+    public:
+        std::map< std::string, std::tuple<std::string, std::string>> serviceToHostIpMapping;
+    };
+
 public:
     //==============================================================================
     MainComponent();
@@ -73,24 +76,21 @@ public:
     //==============================================================================
     void paint (Graphics&) override;
     void resized() override;
+
+    //==============================================================================
+    void handleMessage(const Message& message) override;
+
+    //==============================================================================
+    void handleServicesChanged() override;
     
 private:
-    //==============================================================================
-    void handleServiceSelected(JUCEAppBasics::ZeroconfDiscoverComponent::ZeroconfServiceType type, JUCEAppBasics::ZeroconfDiscoverComponent::ZeroconfSearcher::ServiceInfo* info);
     
     //==============================================================================
-    std::unique_ptr<DemoHeaderFooterComponent>                      m_header;
-    std::unique_ptr<DemoBodyComponent>                              m_body;
-    std::unique_ptr<JUCEAppBasics::ZeroconfDiscoverComponent>       m_zeroconf;
-    std::unique_ptr<JUCEAppBasics::MidiLearnerComponent>            m_midiLearner;
-    std::unique_ptr<JUCEAppBasics::ColourAndSizePickerComponent>    m_colourAndSizePicker;
-    std::unique_ptr<DemoOverlayComponent>                           m_overlay;
-    std::unique_ptr<DemoHeaderFooterComponent>                      m_footer;
+    std::unique_ptr<ParentTreeViewItem>                 m_mDNSTreeRootItem;
+    std::unique_ptr<TreeView>                           m_mDNSTree;
+    std::unique_ptr<ZeroconfSearcher::ZeroconfSearcher> m_OSCsearcher;
+    std::unique_ptr<ZeroconfSearcher::ZeroconfSearcher> m_OCAsearcher;
 
-    std::vector<std::unique_ptr<DrawableButton>>                    m_buttons;
-    std::unique_ptr<JUCEAppBasics::SplitButtonComponent>            m_splitButton;
-
-    std::unique_ptr<AppConfig>  m_config;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

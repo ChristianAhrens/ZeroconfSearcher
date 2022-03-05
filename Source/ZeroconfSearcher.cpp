@@ -10,6 +10,9 @@
 
 #include "ZeroconfSearcher.h"
 
+#include <chrono>
+#include <thread>
+
 
 namespace ZeroconfSearcher
 {
@@ -29,7 +32,7 @@ std::map<std::string, std::string>   ZeroconfSearcher::s_mdnsEntryTXT = std::map
 
 
 //==============================================================================
-ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName, unsigned short announcementPort) :
+ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName) :
 	m_name(name),
 	m_serviceName(serviceName)
 {
@@ -38,24 +41,32 @@ ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName, un
 	WSADATA wsaData;
 	if (WSAStartup(versionWanted, &wsaData))
 	{
-		//DBG(String("Failed to initialize WinSock"));
+		std::printf("Failed to initialize WinSock");
 	}
 #endif
 		
 	m_socketIdx = mdns_socket_open_ipv4(nullptr);
 	if (m_socketIdx < 0)
 	{
+#ifdef _WIN32
 		int error = WSAGetLastError();
-		//DBG(String("mdns_socket_open_ipv4 returned error (LastError:") + String(error) + String(")"));
+		std::printf("mdns_socket_open_ipv4 returned error (LastError: %d)", error);
+#endif
+	}
+	else
+	{
+		std::future<void> future = m_threadExitSignal.get_future();
+		m_searcherThread = std::make_unique<std::thread>(&run, std::move(future), this);
 	}
 }
 
 ZeroconfSearcher::~ZeroconfSearcher()
 {
+	m_threadExitSignal.set_value();
+	m_searcherThread->join();
+
 	mdns_socket_close(m_socketIdx);
 
-	for (auto& i : m_services)
-		delete i;
 	m_services.clear();
 
 #ifdef _WIN32
@@ -63,13 +74,20 @@ ZeroconfSearcher::~ZeroconfSearcher()
 #endif
 }
 
-bool ZeroconfSearcher::search()
+void ZeroconfSearcher::AddListener(ZeroconfSearcherListener* listener)
 {
-	if (Thread::getCurrentThread()->threadShouldExit())
-		return false;
+	m_listeners.push_back(listener);
+}
 
-	//servus::Strings instances = m_servus.discover(servus::Servus::Interface::IF_ALL, 200);
-	
+void ZeroconfSearcher::RemoveListener(ZeroconfSearcherListener* listener)
+{
+	auto knownListener = std::find(m_listeners.begin(), m_listeners.end(), listener);
+	if (knownListener != m_listeners.end())
+		m_listeners.erase(knownListener);
+}
+
+bool ZeroconfSearcher::Search()
+{
 	bool changed = false;
 
 	std::string queryName = m_serviceName + ".local";
@@ -78,116 +96,65 @@ bool ZeroconfSearcher::search()
 	int queryId = mdns_query_send(m_socketIdx, mdns_record_type_t::MDNS_RECORDTYPE_ANY, queryName.c_str(), queryName.length(), buffer, sizeof(buffer), 0);
 	if (queryId < 0)
 	{
-		//DBG(String("mdns query failed"));
+		return false;
 	}
 
 	char userData[512];
-	size_t responseCnt = mdns_query_recv(m_socketIdx, buffer, sizeof(buffer), reinterpret_cast<mdns_record_callback_fn>(&recvCallback), userData, queryId);
+	size_t responseCnt = mdns_query_recv(m_socketIdx, buffer, sizeof(buffer), reinterpret_cast<mdns_record_callback_fn>(&RecvCallback), userData, queryId);
 
 	if (responseCnt > 0)
 	{
-		//DBG(String("mdns got ") + String(responseCnt) + String(" responses for ") + String(ZeroconfSearcher::s_mdnsEntry) + String(" from ") + String(ZeroconfSearcher::s_mdnsEntrySRVName));
-
 		ServiceInfo info;
-		
 		info.ip = ZeroconfSearcher::s_mdnsEntryAHost;
 		info.port = ZeroconfSearcher::s_mdnsEntrySRVPort;
 		info.host = ZeroconfSearcher::s_mdnsEntrySRVName;
 		info.name = ZeroconfSearcher::s_mdnsEntryPTR;
+		info.txtRecords = ZeroconfSearcher::s_mdnsEntryTXT;
 
-		auto it = std::find_if(m_services.begin(), m_services.end(), [info](ServiceInfo* i_ptr) { return (info.name == i_ptr->name && info.host == i_ptr->host && info.ip == i_ptr->ip && info.port == i_ptr->port); });
+		auto it = std::find_if(m_services.begin(), m_services.end(), [info](std::unique_ptr<ServiceInfo>& i_ref) { return (info.name == i_ref->name && info.host == i_ref->host && info.port == i_ref->port); });
 		if (it != m_services.end())
-			UpdateService(*it, info.host, info.ip, info.port);
+			UpdateService(*it, info.ip, info.txtRecords);
 		else
-			AddService(info.name, info.host, info.ip, info.port);
+			AddService(info.name, info.host, info.ip, info.port, info.txtRecords);
+
+		changed = true;
 	}
 
-	ZeroconfSearcher::s_mdnsEntry				= std::string();
-	ZeroconfSearcher::s_mdnsEntryPTR			= std::string();
-	ZeroconfSearcher::s_mdnsEntrySRVName		= std::string();
-	ZeroconfSearcher::s_mdnsEntrySRVPort		= std::uint16_t(0);
-	ZeroconfSearcher::s_mdnsEntrySRVPriority	= std::uint16_t(0);
-	ZeroconfSearcher::s_mdnsEntrySRVWeight		= std::uint16_t(0);
-	ZeroconfSearcher::s_mdnsEntryAHost			= std::string();
-	ZeroconfSearcher::s_mdnsEntryAService		= std::string();
-	ZeroconfSearcher::s_mdnsEntryAAAAHost		= std::string();
-	ZeroconfSearcher::s_mdnsEntryAAAAService	= std::string();
-	ZeroconfSearcher::s_mdnsEntryTXT			= std::map<std::string, std::string>();
-	
-	//StringArray servicesArray;
-	//for (auto &s : instances)
-	//	servicesArray.add(s);
-	//
-	//Array<ServiceInfo *> servicesToRemove;
-	//
-	//for (auto &ss : m_services)
-	//{
-	//	if (servicesArray.contains(ss->name))
-	//	{
-	//		String host = m_servus.get(ss->name.toStdString(), "servus_host");
-	//		if (host.endsWithChar('.'))
-	//			host = host.substring(0, host.length() - 1);
-	//		int port = String(m_servus.get(ss->name.toStdString(), "servus_port")).getIntValue();
-	//
-	//		if (ss->host != host || ss->port != port)
-	//			servicesToRemove.add(ss);
-	//	}
-	//	else
-	//	{
-	//		servicesToRemove.add(ss);
-	//	}
-	//}
-	//
-	//for (auto &ss : servicesToRemove)
-	//	removeService(ss);
-	//
-	//for (auto &s : servicesArray)
-	//{
-    //    if (Thread::getCurrentThread()->threadShouldExit())
-	//		return false;
-    //    
-    //    String host = m_servus.get(s.toStdString(), "servus_host");
-	//	if (host.endsWithChar('.'))
-	//		host = host.substring(0, host.length() - 1);
-	//
-	//	int port = String(m_servus.get(s.toStdString(), "servus_port")).getIntValue();
-	//	String ip = getIPForHostAndPort(host, port);
-	//
-	//	bool isLocal = false;
-	//	if (ip.isNotEmpty())
-	//	{
-	//		Array<IPAddress> localIps;
-	//		IPAddress::findAllAddresses(localIps);
-	//		for (auto &lip : localIps)
-	//		{
-	//			if (ip == lip.toString())
-	//			{
-	//				isLocal = true;
-	//				break;
-	//			}
-	//		}
-	//	}
-	//
-	//	if (isLocal)
-	//		ip = IPAddress::local().toString();
-	//
-	//	ServiceInfo * info = getService(s, host, port);
-	//	if (info == nullptr)
-	//	{
-	//		changed = true;
-	//		addService(s, host, ip, port);
-	//	}
-	//	else if (info->host != host || info->port != port || info->ip != ip)
-	//	{
-	//		changed = true;
-	//		updateService(info, host, ip, port);
-	//	}
-	//}
+	ZeroconfSearcher::s_mdnsEntry.clear();
+	ZeroconfSearcher::s_mdnsEntryPTR.clear();
+	ZeroconfSearcher::s_mdnsEntrySRVName.clear();
+	ZeroconfSearcher::s_mdnsEntrySRVPort = 0;
+	ZeroconfSearcher::s_mdnsEntrySRVPriority = 0;
+	ZeroconfSearcher::s_mdnsEntrySRVWeight = 0;
+	ZeroconfSearcher::s_mdnsEntryAHost.clear();
+	ZeroconfSearcher::s_mdnsEntryAService.clear();
+	ZeroconfSearcher::s_mdnsEntryAAAAHost.clear();
+	ZeroconfSearcher::s_mdnsEntryAAAAService.clear();
+	ZeroconfSearcher::s_mdnsEntryTXT.clear();
 
 	return changed;
 }
 
-std::string ZeroconfSearcher::getIPForHostAndPort(std::string host, int port)
+void ZeroconfSearcher::BroadcastChanges()
+{
+	for (auto const& listener : m_listeners)
+		listener->handleServicesChanged();
+}
+
+void ZeroconfSearcher::run(std::future<void> future, ZeroconfSearcher* searcherInstance)
+{
+	while (future.wait_for(std::chrono::milliseconds(1)) == std::future_status::timeout)
+	{
+		if (searcherInstance->Search())
+		{
+			searcherInstance->BroadcastChanges();
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+	}
+}
+
+std::string ZeroconfSearcher::GetIPForHostAndPort(std::string host, int port)
 {
 	std::string ip;
 
@@ -195,65 +162,61 @@ std::string ZeroconfSearcher::getIPForHostAndPort(std::string host, int port)
 	hints.ai_family = AF_INET;
 
 	struct addrinfo* info = nullptr;
-	getaddrinfo(host.c_str(), std::string(port).c_str(), &hints, &info);
+	getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &info);
 	if (info == nullptr)
 	{
-		//DBG("Should not be null !");
 		return "";
 	}
 
 	char * ipData = info->ai_addr->sa_data;
 	if (info != nullptr)
-		ip = std::string((uint8)ipData[2]) + "." + std::string((uint8)ipData[3]) + "." + std::string((uint8)ipData[4]) + "." + std::string((uint8)ipData[5]);
+		ip = std::to_string((std::uint8_t)ipData[2]) + "." + std::to_string((std::uint8_t)ipData[3]) + "." + std::to_string((std::uint8_t)ipData[4]) + "." + std::to_string((std::uint8_t)ipData[5]);
 	
 	freeaddrinfo(info);
 
 	return ip;
 }
 
-ZeroconfSearcher::ServiceInfo * ZeroconfSearcher::GetService(std::string& sName, std::string& host, int port)
+ZeroconfSearcher::ServiceInfo * ZeroconfSearcher::GetService(const std::string& name, const std::string& host, int port)
 {
 	for (auto &i : m_services)
 	{
-		if (Thread::getCurrentThread()->threadShouldExit())
-			return nullptr;
-		if (i->name == sName && i->host == host && i->port == port)
-			return i;
+		//if (Thread::getCurrentThread()->threadShouldExit())
+		//	return nullptr;
+
+		if (i->name == name && i->host == host && i->port == port)
+			return i.get();
 	}
 	return nullptr;
 }
 
-void ZeroconfSearcher::AddService(std::string& sName, std::string& host, std::string& ip, int port)
+void ZeroconfSearcher::AddService(const std::string& name, const std::string& host, const std::string& ip, int port, const std::map<std::string, std::string>& txtRecords)
 {
-	if (Thread::getCurrentThread()->threadShouldExit())
-		return;
-	//NLOG("Zeroconf", "New " << name << " service discovered : " << sName << " on " << host << ", " << ip << ":" << port);
-	//jassert(GetService(sName, host, port) == nullptr);
-	m_services.push_back(new ServiceInfo{ sName, host, ip, port });
+	//if (Thread::getCurrentThread()->threadShouldExit())
+	//	return;
+
+	m_services.push_back(std::make_unique<ServiceInfo>(ServiceInfo { name, host, ip, port, txtRecords }));
 
 }
 
-void ZeroconfSearcher::RemoveService(ServiceInfo * s)
+void ZeroconfSearcher::RemoveService(std::unique_ptr<ServiceInfo>& service)
 {
-	//jassert(s != nullptr);
-	//NLOG("Zeroconf", name << " service removed : " << s->name);
-	auto sit = std::find(m_services.begin(), m_services.end(), s);
+	auto sit = std::find(m_services.begin(), m_services.end(), service);
 	if (sit != m_services.end())
 	{
-		delete* sit;
 		m_services.erase(sit);
 	}
 }
 
-void ZeroconfSearcher::UpdateService(ServiceInfo * service, std::string& host, std::string& ip, int port)
+void ZeroconfSearcher::UpdateService(std::unique_ptr<ServiceInfo>& service, const std::string& ip, const std::map<std::string, std::string>& txtRecords)
 {
-	jassert(service != nullptr);
-	//NLOG("Zeroconf", name << "service updated changed : " << name << " : " << host << ", " << ip << ":" << port);
-	service->host = host;
-	service->ip = ip;
-	service->port = port;
-}
+	if (service == nullptr)
+		return;
 
+	service->ip = ip;
+	for (auto const& record : txtRecords)
+		service->txtRecords[record.first] = record.second;
+}
 
 const std::string& ZeroconfSearcher::GetName()
 {
@@ -265,7 +228,7 @@ const std::string& ZeroconfSearcher::GetServiceName()
 	return m_serviceName;
 }
 
-const std::vector<ZeroconfSearcher::ServiceInfo*>& ZeroconfSearcher::GetServices()
+const std::vector<std::unique_ptr<ZeroconfSearcher::ServiceInfo>>& ZeroconfSearcher::GetServices()
 {
 	return m_services;
 }
