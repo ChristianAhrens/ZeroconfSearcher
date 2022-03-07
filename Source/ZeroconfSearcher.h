@@ -47,6 +47,8 @@ public:
     class ZeroconfSearcherListener
     {
     public:
+        virtual ~ZeroconfSearcherListener() {};
+        
         //virtual void handleServiceUpdated() = 0;
         //virtual void handleServiceAdded() = 0;
         virtual void handleServicesChanged() = 0;
