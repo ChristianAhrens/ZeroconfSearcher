@@ -11,7 +11,10 @@
       </GROUP>
     </GROUP>
     <GROUP id="{3482B756-6423-A110-A5E5-7E6AADE98E41}" name="Resources">
-      <GROUP id="{E6327702-ADFE-25DB-51B3-D943A20FA2E6}" name="Images"/>
+      <GROUP id="{E6327702-ADFE-25DB-51B3-D943A20FA2E6}" name="Images">
+        <FILE id="i44Aof" name="baseline_search_black_24dp.png" compile="0"
+              resource="1" file="Resources/Images/baseline_search_black_24dp.png"/>
+      </GROUP>
     </GROUP>
     <GROUP id="{45B42ABC-4AC3-D8D9-5073-D1AEE8199147}" name="Sources">
       <GROUP id="{010C4A34-A82A-8B5B-3132-B63E56395F46}" name="ZeroconfSearcher">
@@ -27,7 +30,7 @@
     </GROUP>
   </MAINGROUP>
   <EXPORTFORMATS>
-    <XCODE_MAC targetFolder="Builds/MacOSX" smallIcon="y9CNR0" bigIcon="y9CNR0"
+    <XCODE_MAC targetFolder="Builds/MacOSX" smallIcon="i44Aof" bigIcon="i44Aof"
                microphonePermissionNeeded="1" hardenedRuntime="1" iosDevelopmentTeamID="SB7Q3PP4FQ"
                customPList="&lt;plist&gt;&#10;  &lt;dict&gt;&#10;    &lt;key&gt;LSApplicationCategoryType&lt;/key&gt;&#10;    &lt;string&gt;public.app-category.utilities&lt;/string&gt;&#10;  &lt;/dict&gt;&#10;&lt;/plist&gt;"
                appSandbox="1" appSandboxOptions="com.apple.security.device.microphone,com.apple.security.network.client,com.apple.security.network.server"
@@ -54,7 +57,7 @@
         <MODULEPATH id="juce_dsp" path="../../../../../../JUCE/modules"/>
       </MODULEPATHS>
     </XCODE_MAC>
-    <XCODE_IPHONE targetFolder="Builds/iOS" smallIcon="y9CNR0" bigIcon="y9CNR0"
+    <XCODE_IPHONE targetFolder="Builds/iOS" smallIcon="i44Aof" bigIcon="i44Aof"
                   microphonePermissionNeeded="1" iosDevelopmentTeamID="SB7Q3PP4FQ">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" headerPath="../../../submodules/Servus/"/>
@@ -77,7 +80,8 @@
         <MODULEPATH id="juce_dsp" path="../../../../../../JUCE/modules"/>
       </MODULEPATHS>
     </XCODE_IPHONE>
-    <VS2022 targetFolder="Builds/VisualStudio2022" externalLibraries="iphlpapi.lib&#10;ws2_32.lib&#10;comdlg32.lib&#10;advapi32.lib">
+    <VS2022 targetFolder="Builds/VisualStudio2022" externalLibraries="iphlpapi.lib&#10;ws2_32.lib&#10;comdlg32.lib&#10;advapi32.lib"
+            smallIcon="i44Aof" bigIcon="i44Aof">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug"/>
         <CONFIGURATION isDebug="0" name="Release"/>

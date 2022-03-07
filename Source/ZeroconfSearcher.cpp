@@ -18,17 +18,18 @@ namespace ZeroconfSearcher
 {
 
 
-std::string                          ZeroconfSearcher::s_mdnsEntry = std::string();
-std::string                          ZeroconfSearcher::s_mdnsEntryPTR = std::string();
-std::string                          ZeroconfSearcher::s_mdnsEntrySRVName = std::string();
-std::uint16_t                        ZeroconfSearcher::s_mdnsEntrySRVPort = std::uint16_t(0);
-std::uint16_t                        ZeroconfSearcher::s_mdnsEntrySRVPriority = std::uint16_t(0);
-std::uint16_t                        ZeroconfSearcher::s_mdnsEntrySRVWeight = std::uint16_t(0);
-std::string                          ZeroconfSearcher::s_mdnsEntryAHost = std::string();
-std::string                          ZeroconfSearcher::s_mdnsEntryAService = std::string();
-std::string                          ZeroconfSearcher::s_mdnsEntryAAAAHost = std::string();
-std::string                          ZeroconfSearcher::s_mdnsEntryAAAAService = std::string();
-std::map<std::string, std::string>   ZeroconfSearcher::s_mdnsEntryTXT = std::map<std::string, std::string>();
+std::mutex							ZeroconfSearcher::s_mdnsEntryLock;
+std::string                         ZeroconfSearcher::s_mdnsEntry = std::string();
+std::string                         ZeroconfSearcher::s_mdnsEntryPTR = std::string();
+std::string                         ZeroconfSearcher::s_mdnsEntrySRVName = std::string();
+std::uint16_t                       ZeroconfSearcher::s_mdnsEntrySRVPort = std::uint16_t(0);
+std::uint16_t                       ZeroconfSearcher::s_mdnsEntrySRVPriority = std::uint16_t(0);
+std::uint16_t                       ZeroconfSearcher::s_mdnsEntrySRVWeight = std::uint16_t(0);
+std::string                         ZeroconfSearcher::s_mdnsEntryAHost = std::string();
+std::string                         ZeroconfSearcher::s_mdnsEntryAService = std::string();
+std::string                         ZeroconfSearcher::s_mdnsEntryAAAAHost = std::string();
+std::string                         ZeroconfSearcher::s_mdnsEntryAAAAService = std::string();
+std::map<std::string, std::string>  ZeroconfSearcher::s_mdnsEntryTXT = std::map<std::string, std::string>();
 
 
 //==============================================================================
@@ -104,34 +105,44 @@ bool ZeroconfSearcher::Search()
 
 	if (responseCnt > 0)
 	{
-		ServiceInfo info;
-		info.ip = ZeroconfSearcher::s_mdnsEntryAHost;
-		info.port = ZeroconfSearcher::s_mdnsEntrySRVPort;
-		info.host = ZeroconfSearcher::s_mdnsEntrySRVName;
-		info.name = ZeroconfSearcher::s_mdnsEntryPTR;
-		info.txtRecords = ZeroconfSearcher::s_mdnsEntryTXT;
+		if (ZeroconfSearcher::s_mdnsEntryLock.try_lock())
+		{
+			ServiceInfo info;
+			info.ip = ZeroconfSearcher::s_mdnsEntryAHost;
+			info.port = ZeroconfSearcher::s_mdnsEntrySRVPort;
+			info.host = ZeroconfSearcher::s_mdnsEntrySRVName;
+			info.name = ZeroconfSearcher::s_mdnsEntryPTR;
+			info.txtRecords = ZeroconfSearcher::s_mdnsEntryTXT;
 
-		auto it = std::find_if(m_services.begin(), m_services.end(), [info](std::unique_ptr<ServiceInfo>& i_ref) { return (info.name == i_ref->name && info.host == i_ref->host && info.port == i_ref->port); });
-		if (it != m_services.end())
-			UpdateService(*it, info.ip, info.txtRecords);
-		else
-			AddService(info.name, info.host, info.ip, info.port, info.txtRecords);
+			ZeroconfSearcher::s_mdnsEntryLock.unlock();
 
-		changed = true;
+			auto it = std::find_if(m_services.begin(), m_services.end(), [info](std::unique_ptr<ServiceInfo>& i_ref) { return (info.name == i_ref->name && info.host == i_ref->host && info.port == i_ref->port); });
+			if (it != m_services.end())
+				UpdateService(*it, info.ip, info.txtRecords);
+			else
+				AddService(info.name, info.host, info.ip, info.port, info.txtRecords);
+
+			changed = true;
+		}
 	}
+	
+	if (ZeroconfSearcher::s_mdnsEntryLock.try_lock())
+	{
+		ZeroconfSearcher::s_mdnsEntry.clear();
+		ZeroconfSearcher::s_mdnsEntryPTR.clear();
+		ZeroconfSearcher::s_mdnsEntrySRVName.clear();
+		ZeroconfSearcher::s_mdnsEntrySRVPort = 0;
+		ZeroconfSearcher::s_mdnsEntrySRVPriority = 0;
+		ZeroconfSearcher::s_mdnsEntrySRVWeight = 0;
+		ZeroconfSearcher::s_mdnsEntryAHost.clear();
+		ZeroconfSearcher::s_mdnsEntryAService.clear();
+		ZeroconfSearcher::s_mdnsEntryAAAAHost.clear();
+		ZeroconfSearcher::s_mdnsEntryAAAAService.clear();
+		ZeroconfSearcher::s_mdnsEntryTXT.clear();
 
-	ZeroconfSearcher::s_mdnsEntry.clear();
-	ZeroconfSearcher::s_mdnsEntryPTR.clear();
-	ZeroconfSearcher::s_mdnsEntrySRVName.clear();
-	ZeroconfSearcher::s_mdnsEntrySRVPort = 0;
-	ZeroconfSearcher::s_mdnsEntrySRVPriority = 0;
-	ZeroconfSearcher::s_mdnsEntrySRVWeight = 0;
-	ZeroconfSearcher::s_mdnsEntryAHost.clear();
-	ZeroconfSearcher::s_mdnsEntryAService.clear();
-	ZeroconfSearcher::s_mdnsEntryAAAAHost.clear();
-	ZeroconfSearcher::s_mdnsEntryAAAAService.clear();
-	ZeroconfSearcher::s_mdnsEntryTXT.clear();
-
+		ZeroconfSearcher::s_mdnsEntryLock.unlock();
+	}
+	
 	return changed;
 }
 
@@ -228,9 +239,13 @@ const std::string& ZeroconfSearcher::GetServiceName()
 	return m_serviceName;
 }
 
-const std::vector<std::unique_ptr<ZeroconfSearcher::ServiceInfo>>& ZeroconfSearcher::GetServices()
+const std::vector<ZeroconfSearcher::ServiceInfo*> ZeroconfSearcher::GetServices()
 {
-	return m_services;
+	auto servicesPtrs = std::vector<ZeroconfSearcher::ServiceInfo*>();
+	for (auto const& service : m_services)
+		servicesPtrs.push_back(service.get());
+
+	return servicesPtrs;
 }
 
 int ZeroconfSearcher::GetSocketIdx()

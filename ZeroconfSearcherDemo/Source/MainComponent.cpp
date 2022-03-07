@@ -17,21 +17,32 @@ namespace ZeroconfSearcherDemo
 //==============================================================================
 MainComponent::MainComponent()
 {
+    m_mDNSSearchServiceNamesEdit = std::make_unique<TextEditor>();
+    m_mDNSSearchServiceNamesEdit->setText("_osc._udp;_oca._tcp;");
+    m_mDNSSearchServiceNamesEdit->setColour(TextEditor::ColourIds::backgroundColourId, Colours::white);
+    m_mDNSSearchServiceNamesEdit->setColour(TextEditor::ColourIds::outlineColourId, Colours::darkgrey);
+    m_mDNSSearchServiceNamesEdit->setColour(TextEditor::ColourIds::focusedOutlineColourId, Colours::black);
+    m_mDNSSearchServiceNamesEdit->setColour(TextEditor::ColourIds::textColourId, Colours::black);
+    m_mDNSSearchServiceNamesEdit->applyColourToAllText(Colours::black);
+    addAndMakeVisible(m_mDNSSearchServiceNamesEdit.get());
+
+    m_mDNSSearchTriggerButton = std::make_unique<TextButton>("Search");
+    m_mDNSSearchTriggerButton->setColour(TextButton::ColourIds::textColourOnId, Colours::darkgrey);
+    m_mDNSSearchTriggerButton->setColour(TextButton::ColourIds::textColourOffId, Colours::black);
+    m_mDNSSearchTriggerButton->setColour(TextButton::ColourIds::buttonOnColourId, Colours::lightgrey);
+    m_mDNSSearchTriggerButton->setColour(TextButton::ColourIds::buttonColourId, Colours::white);
+    m_mDNSSearchTriggerButton->addListener(this);
+    addAndMakeVisible(m_mDNSSearchTriggerButton.get());
+
     m_mDNSTree = std::make_unique<TreeView>();
 	addAndMakeVisible(m_mDNSTree.get());
 
     m_mDNSTreeRootItem = std::make_unique<ParentTreeViewItem>();
-    m_mDNSTreeRootItem->name = "mDNS services";
+    m_mDNSTreeRootItem->name = "Discovered mDNS services";
     m_mDNSTreeRootItem->setOpen(true);
     m_mDNSTree->setRootItem(m_mDNSTreeRootItem.get());
-    
-    m_OSCsearcher = std::make_unique<ZeroconfSearcher::ZeroconfSearcher>("Testsearcher", "_osc._udp");
-    m_OSCsearcher->AddListener(this);
 
-    m_OCAsearcher = std::make_unique<ZeroconfSearcher::ZeroconfSearcher>("Testsearcher", "_oca._tcp");
-    m_OCAsearcher->AddListener(this);
-
-	setSize(300, 440);
+	setSize(512, 512);
 }
 
 MainComponent::~MainComponent()
@@ -45,14 +56,14 @@ void MainComponent::paint (Graphics& g)
 
 void MainComponent::resized()
 {
-	auto panelDefaultSize = 45.0f;
+    auto bounds = getLocalBounds();
 
-        FlexBox fb;
-        fb.flexDirection = FlexBox::Direction::column;
-        fb.items.addArray({
-            FlexItem(*m_mDNSTree.get()).withFlex(5) });
+    auto headerControlElmBounds = bounds.removeFromTop(30).reduced(4);
+    m_mDNSSearchTriggerButton->setBounds(headerControlElmBounds.removeFromRight(55));
+    headerControlElmBounds.removeFromRight(4);
+    m_mDNSSearchServiceNamesEdit->setBounds(headerControlElmBounds);
 
-        fb.performLayout(getLocalBounds().toFloat());
+    m_mDNSTree->setBounds(bounds);
 
 }
 
@@ -63,7 +74,7 @@ void MainComponent::handleMessage(const Message& message)
     {
         m_mDNSTreeRootItem->clearSubItems();
 
-        for (auto const& service : servicesUpdatedMessage->serviceToHostIpMapping)
+        for (auto const& service : servicesUpdatedMessage->serviceToHostIpTxtMapping)
         {
             auto serviceSubItem = std::make_unique<ParentTreeViewItem>();
             serviceSubItem->name = service.first;
@@ -82,6 +93,19 @@ void MainComponent::handleMessage(const Message& message)
             ipChildSubItem->setOpen(true);
             serviceSubItem->addSubItem(ipChildSubItem.release());
 
+            auto txtRecParentSubItem = std::make_unique<ChildTreeViewItem>();
+            txtRecParentSubItem->name = "TXT records";
+            txtRecParentSubItem->setOpen(true);
+            for (auto const& txtRecKV : std::get<2>(service.second))
+            {
+                auto txtRecChildSubItem = std::make_unique<ChildTreeViewItem>();
+                txtRecChildSubItem->name = txtRecKV.first;
+                txtRecChildSubItem->value = txtRecKV.second;
+                txtRecChildSubItem->setOpen(true);
+                txtRecParentSubItem->addSubItem(txtRecChildSubItem.release());
+            }
+            serviceSubItem->addSubItem(txtRecParentSubItem.release());
+
             serviceSubItem->setOpen(true);
 
             m_mDNSTreeRootItem->addSubItem(serviceSubItem.release());
@@ -94,13 +118,36 @@ void MainComponent::handleServicesChanged()
 {
     auto message = new ServicesUpdatedMessage;
 
-    for (auto const& service : m_OSCsearcher->GetServices())
-        message->serviceToHostIpMapping.insert(std::make_pair(std::string(service->name), std::tuple<std::string, std::string>(service->host, service->ip)));
-
-    for (auto const& service : m_OCAsearcher->GetServices())
-        message->serviceToHostIpMapping.insert(std::make_pair(std::string(service->name), std::tuple<std::string, std::string>(service->host, service->ip)));
+    for (auto const& searcher : m_zeroconfSearchers)
+    {
+        for (auto const& service : searcher->GetServices())
+            if (service)
+                message->serviceToHostIpTxtMapping.insert(std::make_pair(std::string(service->name), std::tuple<std::string, std::string, std::map<std::string, std::string>>(service->host, service->ip, service->txtRecords)));
+    }
 
     postMessage(message);
+}
+
+void MainComponent::buttonClicked(Button* button)
+{
+    if (button == m_mDNSSearchTriggerButton.get())
+    {
+        m_zeroconfSearchers.clear();
+
+        auto newServiceSearchNames = StringArray();
+        newServiceSearchNames.addTokens(m_mDNSSearchServiceNamesEdit->getText(), ";,", ";,");
+        auto i = 1;
+        for (auto const& serviceSearchName : newServiceSearchNames)
+        {
+            if (serviceSearchName.isNotEmpty())
+            {
+                auto name = String("(") + String(i) + String(") ") + serviceSearchName;
+                m_zeroconfSearchers.push_back(std::make_unique<ZeroconfSearcher::ZeroconfSearcher>(name.toStdString(), serviceSearchName.toStdString()));
+                m_zeroconfSearchers.back()->AddListener(this);
+                i++;
+            }
+        }
+    }
 }
 
 }

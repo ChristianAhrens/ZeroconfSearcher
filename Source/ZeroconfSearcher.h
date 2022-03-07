@@ -12,6 +12,7 @@
 
 #include <future>
 #include <map>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -77,6 +78,7 @@ public:
 
         if (rtype == MDNS_RECORDTYPE_PTR) 
         {
+            std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
             ZeroconfSearcher::s_mdnsEntry = std::string(entrystr.str, entrystr.length);
 
             mdns_string_t namestr = mdns_record_parse_ptr(data, size, record_offset, record_length, buffer, sizeof(buffer));
@@ -87,6 +89,7 @@ public:
         {
             mdns_record_srv_t srv = mdns_record_parse_srv(data, size, record_offset, record_length, buffer, sizeof(buffer));
 
+            std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
             ZeroconfSearcher::s_mdnsEntrySRVName      = std::string(srv.name.str, srv.name.length);
             ZeroconfSearcher::s_mdnsEntrySRVPort      = srv.port;
             ZeroconfSearcher::s_mdnsEntrySRVPriority  = srv.priority;
@@ -99,6 +102,7 @@ public:
 
             ret = getnameinfo((const struct sockaddr*)&addr, (socklen_t)sizeof(addr), host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV | NI_NUMERICHOST);
 
+            std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
             ZeroconfSearcher::s_mdnsEntryAHost = std::string(host);
             ZeroconfSearcher::s_mdnsEntryAService = std::string(service);
         }
@@ -109,6 +113,7 @@ public:
 
             ret = getnameinfo((const struct sockaddr*)&addr, (socklen_t)sizeof(addr), host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV | NI_NUMERICHOST);
 
+            std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
             ZeroconfSearcher::s_mdnsEntryAAAAHost = std::string(host);
             ZeroconfSearcher::s_mdnsEntryAAAAService = std::string(service);
 
@@ -122,10 +127,12 @@ public:
             {
                 if (txtbuffer[itxt].value.length)
                 {
+                    std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
                     ZeroconfSearcher::s_mdnsEntryTXT.insert(std::make_pair(std::string(txtbuffer[itxt].key.str, txtbuffer[itxt].key.length), std::string(txtbuffer[itxt].value.str, txtbuffer[itxt].value.length)));
                 }
                 else 
                 {
+                    std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
                     ZeroconfSearcher::s_mdnsEntryTXT.insert(std::make_pair(std::string(txtbuffer[itxt].key.str, txtbuffer[itxt].key.length), std::string()));
                 }
             }
@@ -149,10 +156,10 @@ public:
 	void RemoveService(std::unique_ptr<ServiceInfo>& service);
 	void UpdateService(std::unique_ptr<ServiceInfo>& service, const std::string& ip, const std::map<std::string, std::string>& txtRecords);
 
-    const std::string&                                  GetName();
-    const std::string&                                  GetServiceName();
-    const std::vector<std::unique_ptr<ServiceInfo>>&    GetServices();
-    int                                                 GetSocketIdx();
+    const std::string&                 GetName();
+    const std::string&                 GetServiceName();
+    const std::vector<ServiceInfo*>    GetServices();
+    int                                GetSocketIdx();
 
     bool Search();
     void BroadcastChanges();
@@ -160,6 +167,7 @@ public:
 private:
     static void run(std::future<void> future, ZeroconfSearcher* searcherInstance);
 
+    static std::mutex                           s_mdnsEntryLock;
     static std::string                          s_mdnsEntry;
     static std::string                          s_mdnsEntryPTR;
     static std::string                          s_mdnsEntrySRVName;
