@@ -11,8 +11,6 @@
 #include "ZeroconfSearcher.h"
 
 #include <assert.h>
-#include <chrono>
-#include <thread>
 
 
 namespace ZeroconfSearcher
@@ -162,6 +160,28 @@ bool ZeroconfSearcher::Search()
 	return changed;
 }
 
+bool ZeroconfSearcher::CleanupStaleServices()
+{
+	auto staleServices = std::vector<ServiceInfo*>();
+	for (auto& service : m_services)
+	{
+		auto staleTime = std::chrono::high_resolution_clock::now() - service->lastSeen;
+
+		using namespace std::literals;
+		if (staleTime > 5s)
+			staleServices.push_back(service.get());
+	}
+
+	for (auto staleService : staleServices)
+	{
+		auto ssit = std::find_if(m_services.begin(), m_services.end(), [&](const auto& val) { return val.get() == staleService; });
+		if (ssit != m_services.end())
+			m_services.erase(ssit);
+	}
+
+	return !staleServices.empty();
+}
+
 void ZeroconfSearcher::BroadcastChanges()
 {
 	for (auto const& listener : m_listeners)
@@ -172,7 +192,9 @@ void ZeroconfSearcher::run(std::future<void> future, ZeroconfSearcher* searcherI
 {
 	while (future.wait_for(std::chrono::milliseconds(1)) == std::future_status::timeout)
 	{
-		if (searcherInstance->Search())
+		auto newServicesFound = searcherInstance->Search();
+		auto existingServicesLost = searcherInstance->CleanupStaleServices();
+		if (newServicesFound || existingServicesLost)
 		{
 			searcherInstance->BroadcastChanges();
 		}
@@ -206,13 +228,13 @@ std::string ZeroconfSearcher::GetIPForHostAndPort(std::string host, int port)
 
 ZeroconfSearcher::ServiceInfo * ZeroconfSearcher::GetService(const std::string& name, const std::string& host, int port)
 {
-	for (auto &i : m_services)
+	for (auto &service : m_services)
 	{
 		//if (Thread::getCurrentThread()->threadShouldExit())
 		//	return nullptr;
 
-		if (i->name == name && i->host == host && i->port == port)
-			return i.get();
+		if (service->name == name && service->host == host && service->port == port)
+			return service.get();
 	}
 	return nullptr;
 }
@@ -222,7 +244,7 @@ void ZeroconfSearcher::AddService(const std::string& name, const std::string& ho
 	//if (Thread::getCurrentThread()->threadShouldExit())
 	//	return;
 
-	m_services.push_back(std::make_unique<ServiceInfo>(ServiceInfo { name, host, ip, port, txtRecords }));
+	m_services.push_back(std::make_unique<ServiceInfo>(ServiceInfo { name, host, ip, port, txtRecords, std::chrono::high_resolution_clock::now() }));
 
 }
 
@@ -243,6 +265,8 @@ void ZeroconfSearcher::UpdateService(std::unique_ptr<ServiceInfo>& service, cons
 	service->ip = ip;
 	for (auto const& record : txtRecords)
 		service->txtRecords[record.first] = record.second;
+
+	service->lastSeen = std::chrono::high_resolution_clock::now();
 }
 
 const std::string& ZeroconfSearcher::GetName()

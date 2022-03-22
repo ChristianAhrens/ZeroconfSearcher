@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <future>
 #include <map>
 #include <mutex>
@@ -42,6 +43,7 @@ public:
         std::string ip;
         int port;
         std::map<std::string, std::string> txtRecords;
+        std::chrono::time_point<std::chrono::high_resolution_clock> lastSeen;
     };
 
     class ZeroconfSearcherListener
@@ -164,6 +166,7 @@ public:
     int                                GetSocketIdx();
 
     bool Search();
+    bool CleanupStaleServices();
     void BroadcastChanges();
 
 private:
