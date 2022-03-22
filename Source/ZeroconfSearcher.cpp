@@ -10,7 +10,7 @@
 
 #include "ZeroconfSearcher.h"
 
-#include <assert.h>
+#include <iostream>
 
 
 namespace ZeroconfSearcher
@@ -155,7 +155,7 @@ bool ZeroconfSearcher::Search()
 	} while (retryCount > 0);
 	
 	if (retryCount == 0)
-		assert(false);
+        std::cout << __FUNCTION__ << " max unlock retry count reached";
 	
 	return changed;
 }
