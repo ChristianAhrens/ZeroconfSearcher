@@ -43,6 +43,8 @@ MainComponent::MainComponent()
     m_mDNSTree->setRootItem(m_mDNSTreeRootItem.get());
 
 	setSize(512, 512);
+
+    RestartSearch();
 }
 
 MainComponent::~MainComponent()
@@ -120,9 +122,12 @@ void MainComponent::handleServicesChanged()
 
     for (auto const& searcher : m_zeroconfSearchers)
     {
-        for (auto const& service : searcher->GetServices())
-            if (service)
-                message->serviceToHostIpTxtMapping.insert(std::make_pair(std::string(service->name), std::tuple<std::string, std::string, std::map<std::string, std::string>>(service->host, service->ip, service->txtRecords)));
+        if (searcher)
+        {
+            for (auto const& service : searcher->GetServices())
+                if (service)
+                    message->serviceToHostIpTxtMapping.insert(std::make_pair(std::string(service->name), std::tuple<std::string, std::string, std::map<std::string, std::string>>(service->host, service->ip, service->txtRecords)));
+        }
     }
 
     postMessage(message);
@@ -132,20 +137,25 @@ void MainComponent::buttonClicked(Button* button)
 {
     if (button == m_mDNSSearchTriggerButton.get())
     {
-        m_zeroconfSearchers.clear();
+        RestartSearch();
+    }
+}
 
-        auto newServiceSearchNames = StringArray();
-        newServiceSearchNames.addTokens(m_mDNSSearchServiceNamesEdit->getText(), ";,", ";,");
-        auto i = 1;
-        for (auto const& serviceSearchName : newServiceSearchNames)
+void MainComponent::RestartSearch()
+{
+    m_zeroconfSearchers.clear();
+
+    auto newServiceSearchNames = StringArray();
+    newServiceSearchNames.addTokens(m_mDNSSearchServiceNamesEdit->getText(), ";,", ";,");
+    auto i = 1;
+    for (auto const& serviceSearchName : newServiceSearchNames)
+    {
+        if (serviceSearchName.isNotEmpty())
         {
-            if (serviceSearchName.isNotEmpty())
-            {
-                auto name = String("(") + String(i) + String(") ") + serviceSearchName;
-                m_zeroconfSearchers.push_back(std::make_unique<ZeroconfSearcher::ZeroconfSearcher>(name.toStdString(), serviceSearchName.toStdString()));
-                m_zeroconfSearchers.back()->AddListener(this);
-                i++;
-            }
+            auto name = String("(") + String(i) + String(") ") + serviceSearchName;
+            m_zeroconfSearchers.push_back(std::make_unique<ZeroconfSearcher::ZeroconfSearcher>(name.toStdString(), serviceSearchName.toStdString()));
+            m_zeroconfSearchers.back()->AddListener(this);
+            i++;
         }
     }
 }

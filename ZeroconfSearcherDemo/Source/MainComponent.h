@@ -73,6 +73,8 @@ public:
     MainComponent();
     ~MainComponent();
 
+    void RestartSearch();
+
     //==============================================================================
     void paint (Graphics&) override;
     void resized() override;
