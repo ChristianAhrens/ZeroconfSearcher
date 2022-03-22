@@ -10,6 +10,7 @@
 
 #include "ZeroconfSearcher.h"
 
+#include <assert.h>
 #include <chrono>
 #include <thread>
 
@@ -116,32 +117,47 @@ bool ZeroconfSearcher::Search()
 
 			ZeroconfSearcher::s_mdnsEntryLock.unlock();
 
-			auto it = std::find_if(m_services.begin(), m_services.end(), [info](std::unique_ptr<ServiceInfo>& i_ref) { return (info.name == i_ref->name && info.host == i_ref->host && info.port == i_ref->port); });
-			if (it != m_services.end())
-				UpdateService(*it, info.ip, info.txtRecords);
-			else
-				AddService(info.name, info.host, info.ip, info.port, info.txtRecords);
+			if (!info.name.empty())
+			{
+				auto it = std::find_if(m_services.begin(), m_services.end(), [info](std::unique_ptr<ServiceInfo>& i_ref) { return (info.name == i_ref->name && info.host == i_ref->host && info.port == i_ref->port); });
+				if (it != m_services.end())
+					UpdateService(*it, info.ip, info.txtRecords);
+				else
+					AddService(info.name, info.host, info.ip, info.port, info.txtRecords);
 
-			changed = true;
+				changed = true;
+			}
 		}
+		else
+			assert(false);
 	}
 	
-	if (ZeroconfSearcher::s_mdnsEntryLock.try_lock())
+	auto retryCount = 3;
+	do
 	{
-		ZeroconfSearcher::s_mdnsEntry.clear();
-		ZeroconfSearcher::s_mdnsEntryPTR.clear();
-		ZeroconfSearcher::s_mdnsEntrySRVName.clear();
-		ZeroconfSearcher::s_mdnsEntrySRVPort = 0;
-		ZeroconfSearcher::s_mdnsEntrySRVPriority = 0;
-		ZeroconfSearcher::s_mdnsEntrySRVWeight = 0;
-		ZeroconfSearcher::s_mdnsEntryAHost.clear();
-		ZeroconfSearcher::s_mdnsEntryAService.clear();
-		ZeroconfSearcher::s_mdnsEntryAAAAHost.clear();
-		ZeroconfSearcher::s_mdnsEntryAAAAService.clear();
-		ZeroconfSearcher::s_mdnsEntryTXT.clear();
+		if (ZeroconfSearcher::s_mdnsEntryLock.try_lock())
+		{
+			ZeroconfSearcher::s_mdnsEntry.clear();
+			ZeroconfSearcher::s_mdnsEntryPTR.clear();
+			ZeroconfSearcher::s_mdnsEntrySRVName.clear();
+			ZeroconfSearcher::s_mdnsEntrySRVPort = 0;
+			ZeroconfSearcher::s_mdnsEntrySRVPriority = 0;
+			ZeroconfSearcher::s_mdnsEntrySRVWeight = 0;
+			ZeroconfSearcher::s_mdnsEntryAHost.clear();
+			ZeroconfSearcher::s_mdnsEntryAService.clear();
+			ZeroconfSearcher::s_mdnsEntryAAAAHost.clear();
+			ZeroconfSearcher::s_mdnsEntryAAAAService.clear();
+			ZeroconfSearcher::s_mdnsEntryTXT.clear();
 
-		ZeroconfSearcher::s_mdnsEntryLock.unlock();
-	}
+			ZeroconfSearcher::s_mdnsEntryLock.unlock();
+
+			break;
+		}
+		retryCount--;
+	} while (retryCount > 0);
+	
+	if (retryCount == 0)
+		assert(false);
 	
 	return changed;
 }
