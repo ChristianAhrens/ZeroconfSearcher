@@ -127,7 +127,7 @@ bool ZeroconfSearcher::Search()
 			}
 		}
 		else
-			assert(false);
+			std::cout << __FUNCTION__ << " unlock for write access failed";
 	}
 	
 	auto retryCount = 3;
@@ -155,7 +155,7 @@ bool ZeroconfSearcher::Search()
 	} while (retryCount > 0);
 	
 	if (retryCount == 0)
-        std::cout << __FUNCTION__ << " max unlock retry count reached";
+        std::cout << __FUNCTION__ << " max unlock retry count for clearing reached";
 	
 	return changed;
 }
