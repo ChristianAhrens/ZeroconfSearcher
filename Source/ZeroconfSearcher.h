@@ -66,8 +66,15 @@ public:
     static int RecvCallback(int /*sock*/, const struct sockaddr* from, size_t addrlen, mdns_entry_type_t entry,
             uint16_t /*query_id*/, uint16_t rtype, uint16_t /*rclass*/, uint32_t /*ttl*/, const void* data,
             size_t size, size_t name_offset, size_t /*name_length*/, size_t record_offset,
-        size_t record_length, void* /*user_data*/)
+        size_t record_length, void* user_data)
     {
+        auto name = std::string(static_cast<char*>(user_data));
+        {
+            std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
+            if (ZeroconfSearcher::s_mdnsEntry.count(name) != 1)
+                return 0;
+        }
+
         char buffer[256];
 
         char host[NI_MAXHOST] = { 0 };
@@ -83,21 +90,21 @@ public:
         if (rtype == MDNS_RECORDTYPE_PTR) 
         {
             std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
-            ZeroconfSearcher::s_mdnsEntry = std::string(entrystr.str, entrystr.length);
+            ZeroconfSearcher::s_mdnsEntry[name] = std::string(entrystr.str, entrystr.length);
 
             mdns_string_t namestr = mdns_record_parse_ptr(data, size, record_offset, record_length, buffer, sizeof(buffer));
 
-            ZeroconfSearcher::s_mdnsEntryPTR = std::string(namestr.str, namestr.length);
+            ZeroconfSearcher::s_mdnsEntryPTR[name] = std::string(namestr.str, namestr.length);
         }
         else if (rtype == MDNS_RECORDTYPE_SRV) 
         {
             mdns_record_srv_t srv = mdns_record_parse_srv(data, size, record_offset, record_length, buffer, sizeof(buffer));
 
             std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
-            ZeroconfSearcher::s_mdnsEntrySRVName      = std::string(srv.name.str, srv.name.length);
-            ZeroconfSearcher::s_mdnsEntrySRVPort      = srv.port;
-            ZeroconfSearcher::s_mdnsEntrySRVPriority  = srv.priority;
-            ZeroconfSearcher::s_mdnsEntrySRVWeight    = srv.weight;
+            ZeroconfSearcher::s_mdnsEntrySRVName[name] = std::string(srv.name.str, srv.name.length);
+            ZeroconfSearcher::s_mdnsEntrySRVPort[name] = srv.port;
+            ZeroconfSearcher::s_mdnsEntrySRVPriority[name] = srv.priority;
+            ZeroconfSearcher::s_mdnsEntrySRVWeight[name] = srv.weight;
         }
         else if (rtype == MDNS_RECORDTYPE_A) 
         {
@@ -107,8 +114,8 @@ public:
             ret = getnameinfo((const struct sockaddr*)&addr, (socklen_t)sizeof(addr), host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV | NI_NUMERICHOST);
 
             std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
-            ZeroconfSearcher::s_mdnsEntryAHost = std::string(host);
-            ZeroconfSearcher::s_mdnsEntryAService = std::string(service);
+            ZeroconfSearcher::s_mdnsEntryAHost[name] = std::string(host);
+            ZeroconfSearcher::s_mdnsEntryAService[name] = std::string(service);
         }
         else if (rtype == MDNS_RECORDTYPE_AAAA) 
         {
@@ -118,8 +125,8 @@ public:
             ret = getnameinfo((const struct sockaddr*)&addr, (socklen_t)sizeof(addr), host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV | NI_NUMERICHOST);
 
             std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
-            ZeroconfSearcher::s_mdnsEntryAAAAHost = std::string(host);
-            ZeroconfSearcher::s_mdnsEntryAAAAService = std::string(service);
+            ZeroconfSearcher::s_mdnsEntryAAAAHost[name] = std::string(host);
+            ZeroconfSearcher::s_mdnsEntryAAAAService[name] = std::string(service);
 
         }
         else if (rtype == MDNS_RECORDTYPE_TXT) 
@@ -132,12 +139,12 @@ public:
                 if (txtbuffer[itxt].value.length)
                 {
                     std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
-                    ZeroconfSearcher::s_mdnsEntryTXT.insert(std::make_pair(std::string(txtbuffer[itxt].key.str, txtbuffer[itxt].key.length), std::string(txtbuffer[itxt].value.str, txtbuffer[itxt].value.length)));
+                    ZeroconfSearcher::s_mdnsEntryTXT[name].insert(std::make_pair(std::string(txtbuffer[itxt].key.str, txtbuffer[itxt].key.length), std::string(txtbuffer[itxt].value.str, txtbuffer[itxt].value.length)));
                 }
                 else 
                 {
                     std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
-                    ZeroconfSearcher::s_mdnsEntryTXT.insert(std::make_pair(std::string(txtbuffer[itxt].key.str, txtbuffer[itxt].key.length), std::string()));
+                    ZeroconfSearcher::s_mdnsEntryTXT[name].insert(std::make_pair(std::string(txtbuffer[itxt].key.str, txtbuffer[itxt].key.length), std::string()));
                 }
             }
         }
@@ -172,18 +179,18 @@ public:
 private:
     static void run(std::future<void> future, ZeroconfSearcher* searcherInstance);
 
-    static std::mutex                           s_mdnsEntryLock;
-    static std::string                          s_mdnsEntry;
-    static std::string                          s_mdnsEntryPTR;
-    static std::string                          s_mdnsEntrySRVName;
-    static std::uint16_t                        s_mdnsEntrySRVPort;
-    static std::uint16_t                        s_mdnsEntrySRVPriority;
-    static std::uint16_t                        s_mdnsEntrySRVWeight;
-    static std::string                          s_mdnsEntryAHost;
-    static std::string                          s_mdnsEntryAService;
-    static std::string                          s_mdnsEntryAAAAHost;
-    static std::string                          s_mdnsEntryAAAAService;
-    static std::map<std::string, std::string>   s_mdnsEntryTXT;
+    static std::mutex                                                   s_mdnsEntryLock;
+    static std::map<std::string, std::string>                           s_mdnsEntry;
+    static std::map<std::string, std::string>                           s_mdnsEntryPTR;
+    static std::map<std::string, std::string>                           s_mdnsEntrySRVName;
+    static std::map<std::string, std::uint16_t>                         s_mdnsEntrySRVPort;
+    static std::map<std::string, std::uint16_t>                         s_mdnsEntrySRVPriority;
+    static std::map<std::string, std::uint16_t>                         s_mdnsEntrySRVWeight;
+    static std::map<std::string, std::string>                           s_mdnsEntryAHost;
+    static std::map<std::string, std::string>                           s_mdnsEntryAService;
+    static std::map<std::string, std::string>                           s_mdnsEntryAAAAHost;
+    static std::map<std::string, std::string>                           s_mdnsEntryAAAAService;
+    static std::map<std::string, std::map<std::string, std::string>>    s_mdnsEntryTXT;
 
     std::string                                 m_name;
     std::string                                 m_serviceName;

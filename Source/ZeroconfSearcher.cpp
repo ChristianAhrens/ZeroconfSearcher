@@ -10,6 +10,7 @@
 
 #include "ZeroconfSearcher.h"
 
+#include <assert.h>
 #include <iostream>
 
 
@@ -17,18 +18,18 @@ namespace ZeroconfSearcher
 {
 
 
-std::mutex							ZeroconfSearcher::s_mdnsEntryLock;
-std::string                         ZeroconfSearcher::s_mdnsEntry = std::string();
-std::string                         ZeroconfSearcher::s_mdnsEntryPTR = std::string();
-std::string                         ZeroconfSearcher::s_mdnsEntrySRVName = std::string();
-std::uint16_t                       ZeroconfSearcher::s_mdnsEntrySRVPort = std::uint16_t(0);
-std::uint16_t                       ZeroconfSearcher::s_mdnsEntrySRVPriority = std::uint16_t(0);
-std::uint16_t                       ZeroconfSearcher::s_mdnsEntrySRVWeight = std::uint16_t(0);
-std::string                         ZeroconfSearcher::s_mdnsEntryAHost = std::string();
-std::string                         ZeroconfSearcher::s_mdnsEntryAService = std::string();
-std::string                         ZeroconfSearcher::s_mdnsEntryAAAAHost = std::string();
-std::string                         ZeroconfSearcher::s_mdnsEntryAAAAService = std::string();
-std::map<std::string, std::string>  ZeroconfSearcher::s_mdnsEntryTXT = std::map<std::string, std::string>();
+std::mutex													ZeroconfSearcher::s_mdnsEntryLock;
+std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntry;
+std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntryPTR;
+std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntrySRVName;
+std::map<std::string, std::uint16_t>						ZeroconfSearcher::s_mdnsEntrySRVPort;
+std::map<std::string, std::uint16_t>						ZeroconfSearcher::s_mdnsEntrySRVPriority;
+std::map<std::string, std::uint16_t>						ZeroconfSearcher::s_mdnsEntrySRVWeight;
+std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntryAHost;
+std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntryAService;
+std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntryAAAAHost;
+std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntryAAAAService;
+std::map<std::string, std::map<std::string, std::string>>	ZeroconfSearcher::s_mdnsEntryTXT;
 
 
 //==============================================================================
@@ -36,6 +37,18 @@ ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName) :
 	m_name(name),
 	m_serviceName(serviceName)
 {
+	ZeroconfSearcher::s_mdnsEntry[name] = std::string();
+	ZeroconfSearcher::s_mdnsEntryPTR[name] = std::string();
+	ZeroconfSearcher::s_mdnsEntrySRVName[name] = std::string();
+	ZeroconfSearcher::s_mdnsEntrySRVPort[name] = 0;
+	ZeroconfSearcher::s_mdnsEntrySRVPriority[name] = 0;
+	ZeroconfSearcher::s_mdnsEntrySRVWeight[name] = 0;
+	ZeroconfSearcher::s_mdnsEntryAHost[name] = std::string();
+	ZeroconfSearcher::s_mdnsEntryAService[name] = std::string();
+	ZeroconfSearcher::s_mdnsEntryAAAAHost[name] = std::string();
+	ZeroconfSearcher::s_mdnsEntryAAAAService[name] = std::string();
+	ZeroconfSearcher::s_mdnsEntryTXT[name] = std::map<std::string, std::string>();
+
 #ifdef _WIN32
 	WORD versionWanted = MAKEWORD(1, 1);
 	WSADATA wsaData;
@@ -99,7 +112,12 @@ bool ZeroconfSearcher::Search()
 		return false;
 	}
 
-	char userData[512];
+	char userData[256];
+	if (m_name.length() + 1 >= 256)
+		return false;
+
+	std::strncpy(userData, m_name.c_str(), m_name.length());
+	userData[m_name.length()] = '\0';
 	size_t responseCnt = mdns_query_recv(m_socketIdx, buffer, sizeof(buffer), reinterpret_cast<mdns_record_callback_fn>(&RecvCallback), userData, queryId);
 
 	if (responseCnt > 0)
@@ -107,11 +125,11 @@ bool ZeroconfSearcher::Search()
 		if (ZeroconfSearcher::s_mdnsEntryLock.try_lock())
 		{
 			ServiceInfo info;
-			info.ip = ZeroconfSearcher::s_mdnsEntryAHost;
-			info.port = ZeroconfSearcher::s_mdnsEntrySRVPort;
-			info.host = ZeroconfSearcher::s_mdnsEntrySRVName;
-			info.name = ZeroconfSearcher::s_mdnsEntryPTR;
-			info.txtRecords = ZeroconfSearcher::s_mdnsEntryTXT;
+			info.ip = ZeroconfSearcher::s_mdnsEntryAHost[m_name];
+			info.port = ZeroconfSearcher::s_mdnsEntrySRVPort[m_name];
+			info.host = ZeroconfSearcher::s_mdnsEntrySRVName[m_name];
+			info.name = ZeroconfSearcher::s_mdnsEntryPTR[m_name];
+			info.txtRecords = ZeroconfSearcher::s_mdnsEntryTXT[m_name];
 
 			ZeroconfSearcher::s_mdnsEntryLock.unlock();
 
@@ -135,17 +153,17 @@ bool ZeroconfSearcher::Search()
 	{
 		if (ZeroconfSearcher::s_mdnsEntryLock.try_lock())
 		{
-			ZeroconfSearcher::s_mdnsEntry.clear();
-			ZeroconfSearcher::s_mdnsEntryPTR.clear();
-			ZeroconfSearcher::s_mdnsEntrySRVName.clear();
-			ZeroconfSearcher::s_mdnsEntrySRVPort = 0;
-			ZeroconfSearcher::s_mdnsEntrySRVPriority = 0;
-			ZeroconfSearcher::s_mdnsEntrySRVWeight = 0;
-			ZeroconfSearcher::s_mdnsEntryAHost.clear();
-			ZeroconfSearcher::s_mdnsEntryAService.clear();
-			ZeroconfSearcher::s_mdnsEntryAAAAHost.clear();
-			ZeroconfSearcher::s_mdnsEntryAAAAService.clear();
-			ZeroconfSearcher::s_mdnsEntryTXT.clear();
+			ZeroconfSearcher::s_mdnsEntry[m_name].clear();
+			ZeroconfSearcher::s_mdnsEntryPTR[m_name].clear();
+			ZeroconfSearcher::s_mdnsEntrySRVName[m_name].clear();
+			ZeroconfSearcher::s_mdnsEntrySRVPort[m_name] = 0;
+			ZeroconfSearcher::s_mdnsEntrySRVPriority[m_name] = 0;
+			ZeroconfSearcher::s_mdnsEntrySRVWeight[m_name] = 0;
+			ZeroconfSearcher::s_mdnsEntryAHost[m_name].clear();
+			ZeroconfSearcher::s_mdnsEntryAService[m_name].clear();
+			ZeroconfSearcher::s_mdnsEntryAAAAHost[m_name].clear();
+			ZeroconfSearcher::s_mdnsEntryAAAAService[m_name].clear();
+			ZeroconfSearcher::s_mdnsEntryTXT[m_name].clear();
 
 			ZeroconfSearcher::s_mdnsEntryLock.unlock();
 
