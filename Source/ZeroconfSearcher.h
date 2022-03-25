@@ -204,8 +204,8 @@ private:
     int                                         m_socketIdx;
     bool                                        m_started;
 
-    std::promise<void>              m_threadExitSignal;
-    std::unique_ptr<std::thread>    m_searcherThread;
+    std::unique_ptr<std::promise<void>> m_threadExitSignal;
+    std::unique_ptr<std::thread>        m_searcherThread;
 
     std::vector<ZeroconfSearcherListener*> m_listeners;
 

@@ -82,11 +82,12 @@ void ZeroconfSearcher::StartSearching()
 	}
 	else
 	{
-		std::future<void> future = m_threadExitSignal.get_future();
+		m_threadExitSignal = std::make_unique<std::promise<void>>();
+		std::future<void> future = m_threadExitSignal->get_future();
 		m_searcherThread = std::make_unique<std::thread>(&run, std::move(future), this);
+		
+		SetStarted();
 	}
-
-	SetStarted();
 }
 
 void ZeroconfSearcher::StopSearching()
@@ -94,7 +95,7 @@ void ZeroconfSearcher::StopSearching()
 	if (!IsStarted())
 		return;
 
-	m_threadExitSignal.set_value();
+	m_threadExitSignal->set_value();
 	m_searcherThread->join();
 
 	mdns_socket_close(m_socketIdx);
@@ -104,6 +105,8 @@ void ZeroconfSearcher::StopSearching()
 #ifdef _WIN32
 	WSACleanup();
 #endif
+
+	m_threadExitSignal.reset();
 
 	SetStarted(false);
 }
