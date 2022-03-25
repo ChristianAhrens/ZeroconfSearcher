@@ -51,9 +51,9 @@ public:
     public:
         virtual ~ZeroconfSearcherListener() {};
         
-        //virtual void handleServiceUpdated() = 0;
-        //virtual void handleServiceAdded() = 0;
-        virtual void handleServicesChanged() = 0;
+        //virtual void handleServiceUpdated(std::string serviceName) = 0;
+        //virtual void handleServiceAdded(std::string serviceName) = 0;
+        virtual void handleServicesChanged(std::string serviceName) = 0;
     };
 
 public:
@@ -167,16 +167,22 @@ public:
 	void RemoveService(std::unique_ptr<ServiceInfo>& service);
 	void UpdateService(std::unique_ptr<ServiceInfo>& service, const std::string& ip, const std::map<std::string, std::string>& txtRecords);
 
-    const std::string&                 GetName();
-    const std::string&                 GetServiceName();
-    const std::vector<ServiceInfo*>    GetServices();
-    int                                GetSocketIdx();
+    void StartSearching();
+    void StopSearching();
+
+    const std::string&              GetName();
+    const std::string&              GetServiceName();
+    const std::vector<ServiceInfo*> GetServices();
+    int                             GetSocketIdx();
+    bool                            IsStarted();
 
     bool Search();
     bool CleanupStaleServices();
     void BroadcastChanges();
 
 private:
+    void SetStarted(bool started = true);
+
     static void run(std::future<void> future, ZeroconfSearcher* searcherInstance);
 
     static std::mutex                                                   s_mdnsEntryLock;
@@ -196,11 +202,13 @@ private:
     std::string                                 m_serviceName;
     std::vector<std::unique_ptr<ServiceInfo>>   m_services;
     int                                         m_socketIdx;
+    bool                                        m_started;
 
     std::promise<void>              m_threadExitSignal;
     std::unique_ptr<std::thread>    m_searcherThread;
 
     std::vector<ZeroconfSearcherListener*> m_listeners;
+
 };
 
 };

@@ -155,6 +155,7 @@ void MainComponent::RestartSearch()
             auto name = String("(") + String(i) + String(") ") + serviceSearchName;
             m_zeroconfSearchers.push_back(std::make_unique<ZeroconfSearcher::ZeroconfSearcher>(name.toStdString(), serviceSearchName.toStdString()));
             m_zeroconfSearchers.back()->AddListener(this);
+            m_zeroconfSearchers.back()->StartSearching();
             i++;
         }
     }

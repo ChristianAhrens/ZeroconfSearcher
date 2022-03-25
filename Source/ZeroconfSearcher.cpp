@@ -49,6 +49,20 @@ ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName) :
 	ZeroconfSearcher::s_mdnsEntryAAAAService[name] = std::string();
 	ZeroconfSearcher::s_mdnsEntryTXT[name] = std::map<std::string, std::string>();
 
+	SetStarted(false);
+
+}
+
+ZeroconfSearcher::~ZeroconfSearcher()
+{
+	StopSearching();
+}
+
+void ZeroconfSearcher::StartSearching()
+{
+	if (IsStarted())
+		return;
+
 #ifdef _WIN32
 	WORD versionWanted = MAKEWORD(1, 1);
 	WSADATA wsaData;
@@ -57,7 +71,7 @@ ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName) :
 		std::printf("Failed to initialize WinSock");
 	}
 #endif
-		
+
 	m_socketIdx = mdns_socket_open_ipv4(nullptr);
 	if (m_socketIdx < 0)
 	{
@@ -71,10 +85,15 @@ ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName) :
 		std::future<void> future = m_threadExitSignal.get_future();
 		m_searcherThread = std::make_unique<std::thread>(&run, std::move(future), this);
 	}
+
+	SetStarted();
 }
 
-ZeroconfSearcher::~ZeroconfSearcher()
+void ZeroconfSearcher::StopSearching()
 {
+	if (!IsStarted())
+		return;
+
 	m_threadExitSignal.set_value();
 	m_searcherThread->join();
 
@@ -85,6 +104,8 @@ ZeroconfSearcher::~ZeroconfSearcher()
 #ifdef _WIN32
 	WSACleanup();
 #endif
+
+	SetStarted(false);
 }
 
 void ZeroconfSearcher::AddListener(ZeroconfSearcherListener* listener)
@@ -203,7 +224,7 @@ bool ZeroconfSearcher::CleanupStaleServices()
 void ZeroconfSearcher::BroadcastChanges()
 {
 	for (auto const& listener : m_listeners)
-		listener->handleServicesChanged();
+		listener->handleServicesChanged(GetServiceName());
 }
 
 void ZeroconfSearcher::run(std::future<void> future, ZeroconfSearcher* searcherInstance)
@@ -309,6 +330,16 @@ const std::vector<ZeroconfSearcher::ServiceInfo*> ZeroconfSearcher::GetServices(
 int ZeroconfSearcher::GetSocketIdx()
 {
 	return m_socketIdx;
+}
+
+bool ZeroconfSearcher::IsStarted()
+{
+	return m_started;
+}
+
+void ZeroconfSearcher::SetStarted(bool started)
+{
+	m_started = started;
 }
 
 }
