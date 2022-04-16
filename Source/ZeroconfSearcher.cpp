@@ -10,7 +10,9 @@
 
 #include "ZeroconfSearcher.h"
 
-#include <assert.h>
+#include <algorithm>
+#include <cassert>
+#include <cstring>
 #include <iostream>
 
 
