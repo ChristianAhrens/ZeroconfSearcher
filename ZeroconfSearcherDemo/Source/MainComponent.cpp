@@ -116,7 +116,7 @@ void MainComponent::handleMessage(const Message& message)
     }
 }
 
-void MainComponent::handleServicesChanged()
+void MainComponent::handleServicesChanged(std::string /*serviceName*/)
 {
     auto message = new ServicesUpdatedMessage;
 

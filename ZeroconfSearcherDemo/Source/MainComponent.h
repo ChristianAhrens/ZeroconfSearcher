@@ -83,8 +83,8 @@ public:
     void handleMessage(const Message& message) override;
 
     //==============================================================================
-    void handleServicesChanged() override;
-
+    void handleServicesChanged(std::string serviceName) override;
+    
     //==============================================================================
     void buttonClicked(Button* button) override;
     
