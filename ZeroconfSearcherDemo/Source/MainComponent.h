@@ -65,7 +65,7 @@ public:
     class ServicesUpdatedMessage : public Message
     {
     public:
-        std::map< std::string, std::tuple<std::string, std::string, std::map<std::string, std::string>>> serviceToHostIpTxtMapping;
+        std::map< std::string, std::tuple<std::string, std::string, std::string, std::map<std::string, std::string>>> serviceToHostIpTxtMapping;
     };
 
 public:

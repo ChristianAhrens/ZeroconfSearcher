@@ -95,10 +95,17 @@ void MainComponent::handleMessage(const Message& message)
             ipChildSubItem->setOpen(true);
             serviceSubItem->addSubItem(ipChildSubItem.release());
 
+            auto port = std::get<2>(service.second);
+            auto portChildSubItem = std::make_unique<ChildTreeViewItem>();
+            portChildSubItem->name = "Port";
+            portChildSubItem->value = port;
+            portChildSubItem->setOpen(true);
+            serviceSubItem->addSubItem(portChildSubItem.release());
+
             auto txtRecParentSubItem = std::make_unique<ChildTreeViewItem>();
             txtRecParentSubItem->name = "TXT records";
             txtRecParentSubItem->setOpen(true);
-            for (auto const& txtRecKV : std::get<2>(service.second))
+            for (auto const& txtRecKV : std::get<3>(service.second))
             {
                 auto txtRecChildSubItem = std::make_unique<ChildTreeViewItem>();
                 txtRecChildSubItem->name = txtRecKV.first;
@@ -126,7 +133,8 @@ void MainComponent::handleServicesChanged(std::string /*serviceName*/)
         {
             for (auto const& service : searcher->GetServices())
                 if (service)
-                    message->serviceToHostIpTxtMapping.insert(std::make_pair(std::string(service->name), std::tuple<std::string, std::string, std::map<std::string, std::string>>(service->host, service->ip, service->txtRecords)));
+                    message->serviceToHostIpTxtMapping[std::string(service->name)] =
+                        std::tuple<std::string, std::string, std::string, std::map<std::string, std::string>>(service->host, service->ip, std::to_string(service->port), service->txtRecords);
         }
     }
 
