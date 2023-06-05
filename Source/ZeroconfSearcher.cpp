@@ -159,6 +159,8 @@ bool ZeroconfSearcher::Search()
 
 			ZeroconfSearcher::s_mdnsEntryLock.unlock();
 
+			std::cout << __FUNCTION__ << " got new info " << info.ip << " " << info.port << " " << info.host << " " << info.name << " txtRecords:" << info.txtRecords.size() << std::endl;
+
 			if (!info.name.empty())
 			{
 				auto it = std::find_if(m_services.begin(), m_services.end(), [info](std::unique_ptr<ServiceInfo>& i_ref) { return (info.name == i_ref->name && info.host == i_ref->host && info.port == i_ref->port); });
@@ -171,7 +173,7 @@ bool ZeroconfSearcher::Search()
 			}
 		}
 		else
-			std::cout << __FUNCTION__ << " unlock for write access failed";
+			std::cout << __FUNCTION__ << " unlock for write access failed" << std::endl;
 	}
 	
 	auto retryCount = 3;
@@ -199,7 +201,7 @@ bool ZeroconfSearcher::Search()
 	} while (retryCount > 0);
 	
 	if (retryCount == 0)
-        std::cout << __FUNCTION__ << " max unlock retry count for clearing reached";
+        std::cout << __FUNCTION__ << " max unlock retry count for clearing reached" << std::endl;
 	
 	return changed;
 }
@@ -307,9 +309,7 @@ void ZeroconfSearcher::UpdateService(std::unique_ptr<ServiceInfo>& service, cons
 		return;
 
 	service->ip = ip;
-	for (auto const& record : txtRecords)
-		service->txtRecords[record.first] = record.second;
-
+	service->txtRecords = txtRecords;
 	service->lastSeen = std::chrono::high_resolution_clock::now();
 }
 
