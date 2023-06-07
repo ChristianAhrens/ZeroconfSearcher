@@ -21,6 +21,7 @@ namespace ZeroconfSearcher
 
 
 std::mutex													ZeroconfSearcher::s_mdnsEntryLock;
+int                                                         ZeroconfSearcher::s_mdnsQueryId;
 std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntry;
 std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntryPTR;
 std::map<std::string, std::string>							ZeroconfSearcher::s_mdnsEntrySRVName;
@@ -39,6 +40,7 @@ ZeroconfSearcher::ZeroconfSearcher(std::string name, std::string serviceName) :
 	m_name(name),
 	m_serviceName(serviceName)
 {
+	ZeroconfSearcher::s_mdnsQueryId = -1;
 	ZeroconfSearcher::s_mdnsEntry[name] = std::string();
 	ZeroconfSearcher::s_mdnsEntryPTR[name] = std::string();
 	ZeroconfSearcher::s_mdnsEntrySRVName[name] = std::string();
@@ -70,16 +72,17 @@ void ZeroconfSearcher::StartSearching()
 	WSADATA wsaData;
 	if (WSAStartup(versionWanted, &wsaData))
 	{
-		std::printf("Failed to initialize WinSock");
+		std::cout << "Failed to initialize WinSock" << std::endl;
 	}
 #endif
 
 	m_socketIdx = mdns_socket_open_ipv4(nullptr);
+
 	if (m_socketIdx < 0)
 	{
 #ifdef _WIN32
 		int error = WSAGetLastError();
-		std::printf("mdns_socket_open_ipv4 returned error (LastError: %d)", error);
+		std::cout << "mdns_socket_open_ipv4 returned error (LastError: " << error << ")" << std::endl;
 #endif
 	}
 	else
@@ -132,9 +135,13 @@ bool ZeroconfSearcher::Search()
 	std::string queryName = m_serviceName + ".local";
 
 	char buffer[512];
-	int queryId = mdns_query_send(m_socketIdx, mdns_record_type_t::MDNS_RECORDTYPE_ANY, queryName.c_str(), queryName.length(), buffer, sizeof(buffer), 0);
-	if (queryId < 0)
+	ZeroconfSearcher::s_mdnsQueryId = mdns_query_send(m_socketIdx, mdns_record_type_t::MDNS_RECORDTYPE_ANY, queryName.c_str(), queryName.length(), buffer, sizeof(buffer), 0);
+	if (ZeroconfSearcher::s_mdnsQueryId < 0)
 	{
+#ifdef _WIN32
+		int error = WSAGetLastError();
+		std::cout << "mdns_query_send returned error (LastError: " << error << ")" << std::endl;
+#endif
 		return false;
 	}
 
@@ -144,7 +151,7 @@ bool ZeroconfSearcher::Search()
 
 	std::strncpy(userData, m_name.c_str(), m_name.length());
 	userData[m_name.length()] = '\0';
-	size_t responseCnt = mdns_query_recv(m_socketIdx, buffer, sizeof(buffer), reinterpret_cast<mdns_record_callback_fn>(&RecvCallback), userData, queryId);
+	size_t responseCnt = mdns_query_recv(m_socketIdx, buffer, sizeof(buffer), reinterpret_cast<mdns_record_callback_fn>(&RecvCallback), userData, ZeroconfSearcher::s_mdnsQueryId);
 
 	if (responseCnt > 0)
 	{
@@ -161,7 +168,7 @@ bool ZeroconfSearcher::Search()
 
 			std::cout << __FUNCTION__ << " got new info " << info.ip << " " << info.port << " " << info.host << " " << info.name << " txtRecords:" << info.txtRecords.size() << std::endl;
 
-			if (!info.name.empty())
+			if (info.name.find(queryName) != std::string::npos)
 			{
 				auto it = std::find_if(m_services.begin(), m_services.end(), [info](std::unique_ptr<ServiceInfo>& i_ref) { return (info.name == i_ref->name && info.host == i_ref->host && info.port == i_ref->port); });
 				if (it != m_services.end())
@@ -272,24 +279,18 @@ std::string ZeroconfSearcher::GetIPForHostAndPort(std::string host, int port)
 	return ip;
 }
 
-ZeroconfSearcher::ServiceInfo * ZeroconfSearcher::GetService(const std::string& name, const std::string& host, int port)
+std::unique_ptr<ZeroconfSearcher::ServiceInfo> ZeroconfSearcher::GetService(const std::string& name, const std::string& host, int port)
 {
 	for (auto &service : m_services)
 	{
-		//if (Thread::getCurrentThread()->threadShouldExit())
-		//	return nullptr;
-
 		if (service->name == name && service->host == host && service->port == port)
-			return service.get();
+			return std::move(service);
 	}
-	return nullptr;
+	return std::unique_ptr<ZeroconfSearcher::ServiceInfo>(nullptr);
 }
 
 void ZeroconfSearcher::AddService(const std::string& name, const std::string& host, const std::string& ip, int port, const std::map<std::string, std::string>& txtRecords)
 {
-	//if (Thread::getCurrentThread()->threadShouldExit())
-	//	return;
-
 	m_services.push_back(std::make_unique<ServiceInfo>(ServiceInfo { name, host, ip, port, txtRecords, std::chrono::high_resolution_clock::now() }));
 
 }
@@ -323,11 +324,11 @@ const std::string& ZeroconfSearcher::GetServiceName()
 	return m_serviceName;
 }
 
-const std::vector<ZeroconfSearcher::ServiceInfo*> ZeroconfSearcher::GetServices()
+const std::vector<ZeroconfSearcher::ServiceInfo> ZeroconfSearcher::GetServices()
 {
-	auto servicesPtrs = std::vector<ZeroconfSearcher::ServiceInfo*>();
+	auto servicesPtrs = std::vector<ZeroconfSearcher::ServiceInfo>();
 	for (auto const& service : m_services)
-		servicesPtrs.push_back(service.get());
+		servicesPtrs.push_back(*service);
 
 	return servicesPtrs;
 }

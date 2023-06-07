@@ -17,6 +17,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <iostream>
 
 #include "../submodules/mdns/mdns.h"
 
@@ -44,6 +45,10 @@ public:
         int port;
         std::map<std::string, std::string> txtRecords;
         std::chrono::time_point<std::chrono::high_resolution_clock> lastSeen;
+
+        bool operator==(const ServiceInfo& si) const {
+            return si.name == name && si.host == host && si.ip == ip && si.port == port;
+        }
     };
 
     class ZeroconfSearcherListener
@@ -64,7 +69,7 @@ public:
     void RemoveListener(ZeroconfSearcherListener* listener);
 
     static int RecvCallback(int /*sock*/, const struct sockaddr* from, size_t addrlen, mdns_entry_type_t entry,
-            uint16_t /*query_id*/, uint16_t rtype, uint16_t /*rclass*/, uint32_t /*ttl*/, const void* data,
+            uint16_t query_id, uint16_t rtype, uint16_t /*rclass*/, uint32_t /*ttl*/, const void* data,
             size_t size, size_t name_offset, size_t /*name_length*/, size_t record_offset,
         size_t record_length, void* user_data)
     {
@@ -73,6 +78,15 @@ public:
             std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
             if (ZeroconfSearcher::s_mdnsEntry.count(name) != 1)
                 return 0;
+        }
+
+        {
+            std::lock_guard<std::mutex> mdnsEntryLockGuard(ZeroconfSearcher::s_mdnsEntryLock);
+            if (ZeroconfSearcher::s_mdnsQueryId != query_id)
+            {
+                std::cout << __FUNCTION__ << " ignoring unexpected query_id " << ZeroconfSearcher::s_mdnsQueryId << std::endl;
+                return 0;
+            }
         }
 
         char buffer[256];
@@ -162,7 +176,7 @@ public:
 
     std::string GetIPForHostAndPort(std::string host, int port);
 
-	ServiceInfo * GetService(const std::string& name, const std::string& host, int port);
+    std::unique_ptr<ServiceInfo> GetService(const std::string& name, const std::string& host, int port);
 	void AddService(const std::string& name, const std::string& host, const std::string& ip, int port, const std::map<std::string, std::string>& txtRecords);
 	void RemoveService(std::unique_ptr<ServiceInfo>& service);
 	void UpdateService(std::unique_ptr<ServiceInfo>& service, const std::string& ip, const std::map<std::string, std::string>& txtRecords);
@@ -172,7 +186,7 @@ public:
 
     const std::string&              GetName();
     const std::string&              GetServiceName();
-    const std::vector<ServiceInfo*> GetServices();
+    const std::vector<ServiceInfo>  GetServices();
     int                             GetSocketIdx();
     bool                            IsStarted();
 
@@ -186,6 +200,7 @@ private:
     static void run(std::future<void> future, ZeroconfSearcher* searcherInstance);
 
     static std::mutex                                                   s_mdnsEntryLock;
+    static int                                                          s_mdnsQueryId;
     static std::map<std::string, std::string>                           s_mdnsEntry;
     static std::map<std::string, std::string>                           s_mdnsEntryPTR;
     static std::map<std::string, std::string>                           s_mdnsEntrySRVName;
