@@ -132,9 +132,8 @@ void MainComponent::handleServicesChanged(std::string /*serviceName*/)
         if (searcher)
         {
             for (auto const& service : searcher->GetServices())
-                if (service)
-                    message->serviceToHostIpTxtMapping[std::string(service->name)] =
-                        std::tuple<std::string, std::string, std::string, std::map<std::string, std::string>>(service->host, service->ip, std::to_string(service->port), service->txtRecords);
+                message->serviceToHostIpTxtMapping[std::string(service.name)] =
+                    std::tuple<std::string, std::string, std::string, std::map<std::string, std::string>>(service.host, service.ip, std::to_string(service.port), service.txtRecords);
         }
     }
 
